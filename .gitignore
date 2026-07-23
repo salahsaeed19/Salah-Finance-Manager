@@ -1,0 +1,29 @@
+# Android and Gradle local state
+.gradle/
+**/build/
+artifacts/
+*.apk
+local.properties
+.idea/
+*.iml
+
+# Signing, device data, exports and financial artifacts
+*.jks
+*.keystore
+*.db
+*.db-shm
+*.db-wal
+*.bak
+*.backup
+*.xlsx
+*.csv
+*.pem
+*.key
+*.p12
+docs/screenshots/phase-04/*.png
+!docs/screenshots/references/finance-dashboard-reference.png
+
+# Reports and temporary data
+reports/
+*.hprof
+*.tmp

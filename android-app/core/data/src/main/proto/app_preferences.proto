@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option java_package = "com.salahabusaif.financemanager.core.data.proto";
+option java_multiple_files = true;
+option java_outer_classname = "AppPreferencesProto";
+
+message StoredAppPreferences {
+  enum Language { ARABIC = 0; ENGLISH = 1; }
+  enum Theme { SYSTEM = 0; LIGHT = 1; DARK = 2; }
+  Language language = 1;
+  Theme theme = 2;
+  bool hide_amounts = 3;
+}

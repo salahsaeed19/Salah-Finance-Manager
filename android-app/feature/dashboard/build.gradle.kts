@@ -1,0 +1,3 @@
+plugins { id("salah.android.compose.library"); alias(libs.plugins.kotlin.compose); alias(libs.plugins.hilt); alias(libs.plugins.ksp) }
+android { namespace = "com.salahabusaif.financemanager.feature.dashboard" }
+dependencies { implementation(platform(libs.compose.bom)); implementation(libs.material3); implementation(libs.compose.ui); implementation(libs.compose.material.icons.extended); implementation(libs.hilt.android); implementation(libs.hilt.navigation.compose); implementation(libs.androidx.lifecycle.viewmodel.compose); implementation(libs.androidx.lifecycle.runtime.compose); implementation(project(":core:designsystem")); implementation(project(":core:data")); implementation(project(":core:model")); implementation(project(":core:money")); ksp(libs.hilt.compiler) }
