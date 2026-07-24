@@ -17,6 +17,9 @@ protobuf {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))
+    implementation(project(":core:ledger"))
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
     implementation(libs.datastore.core)
     implementation(libs.protobuf.javalite)
     implementation(libs.hilt.android)

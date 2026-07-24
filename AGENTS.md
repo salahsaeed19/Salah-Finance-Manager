@@ -8,6 +8,7 @@
 - Represent money as `Long` minor units; never use `Float` or `Double`.
 - Financial state is transaction-driven; do not directly edit balances or use destructive migrations.
 - Do not commit, push, or create a branch unless explicitly requested.
+- For physical-device APK validation on this MIUI workstation: build and validate first, then initiate `adb install -r` for Salah Finance Manager. If MIUI presents an installation or biometric approval prompt, ask the user to approve it and then continue validation. Never uninstall the app or clear its data without explicit approval.
 
 ## Android commands (PowerShell)
 

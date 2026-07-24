@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Card
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
@@ -23,8 +26,10 @@ import com.salahabusaif.financemanager.core.designsystem.BalanceHeroCard
 import com.salahabusaif.financemanager.core.designsystem.EmptyState
 import com.salahabusaif.financemanager.core.designsystem.FinanceSpacing
 import com.salahabusaif.financemanager.core.designsystem.MoneySummaryCard
+import com.salahabusaif.financemanager.core.designsystem.MoneyText
 import com.salahabusaif.financemanager.core.designsystem.R
 import com.salahabusaif.financemanager.core.model.CurrencyCode
+import com.salahabusaif.financemanager.core.ledger.LedgerGateway
 import com.salahabusaif.financemanager.core.money.Money
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -34,19 +39,31 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @HiltViewModel
-class DashboardViewModel @Inject constructor(private val preferencesRepository: AppPreferencesRepository) : ViewModel() {
+class DashboardViewModel @Inject constructor(private val preferencesRepository: AppPreferencesRepository, ledgerGateway: LedgerGateway) : ViewModel() {
     val preferences = preferencesRepository.preferences.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.salahabusaif.financemanager.core.model.AppPreferences())
+    val accounts = ledgerGateway.financialAccounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     fun toggleAmounts() = viewModelScope.launch { preferencesRepository.setHideAmounts(!preferences.value.hideAmounts) }
 }
 
 @Composable
-fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
+fun DashboardScreen(
+    onOpenAccounts: () -> Unit = {},
+    viewModel: DashboardViewModel = hiltViewModel(),
+) {
     val preferences by viewModel.preferences.collectAsState()
+    val accounts by viewModel.accounts.collectAsState()
+    val balances = CurrencyCode.entries.associateWith { currency ->
+        accounts.filter { !it.isArchived && it.currency == currency }.sumOf { it.balanceMinor }
+    }
     Column(
         Modifier.fillMaxSize().padding(FinanceSpacing.md),
         verticalArrangement = Arrangement.spacedBy(FinanceSpacing.md),
     ) {
-        BalanceHeroCard(preferences.hideAmounts, viewModel::toggleAmounts)
+        BalanceHeroCard(Money(balances.getValue(CurrencyCode.ILS), CurrencyCode.ILS), preferences.hideAmounts, viewModel::toggleAmounts)
+        CurrencyTotalsCard(balances, preferences.hideAmounts)
+        Button(onClick = onOpenAccounts, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.my_accounts_action))
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FinanceSpacing.sm)) {
             MoneySummaryCard(
                 stringResource(R.string.income),
@@ -74,3 +91,25 @@ fun DashboardScreen(viewModel: DashboardViewModel = hiltViewModel()) {
         )
     }
 }
+
+@Composable
+private fun CurrencyTotalsCard(balances: Map<CurrencyCode, Long>, hidden: Boolean) = Card(Modifier.fillMaxWidth()) {
+    Column(Modifier.padding(FinanceSpacing.md), verticalArrangement = Arrangement.spacedBy(FinanceSpacing.sm)) {
+        Text(stringResource(R.string.total_assets), style = MaterialTheme.typography.titleMedium)
+        CurrencyCode.entries.forEach { currency ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(currencyLabel(currency), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.salahabusaif.financemanager.core.designsystem.HiddenMoneyText(Money(balances.getValue(currency), currency), hidden)
+            }
+        }
+    }
+}
+
+@Composable
+private fun currencyLabel(currency: CurrencyCode): String = stringResource(
+    when (currency) {
+        CurrencyCode.ILS -> R.string.currency_ils
+        CurrencyCode.USD -> R.string.currency_usd
+        CurrencyCode.JOD -> R.string.currency_jod
+    },
+)

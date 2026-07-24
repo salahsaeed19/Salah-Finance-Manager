@@ -6,6 +6,8 @@
 **Date:** 23 July 2026  
 **Product Owner:** Salah Abu Saif  
 **Target Platform:** Android  
+
+> Product position update (Phase 05): Salah Finance Manager is a private personal finance application customized for Salah Abu Saif and his personal accounts. It is not organization onboarding software or a public multi-tenant product.
 **Planned Technology Stack:** Kotlin, Jetpack Compose, Room, Android Studio  
 **Supported Languages:** Arabic and English  
 

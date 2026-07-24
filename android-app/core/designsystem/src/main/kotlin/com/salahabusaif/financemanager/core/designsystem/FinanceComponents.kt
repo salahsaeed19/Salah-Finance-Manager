@@ -93,7 +93,13 @@ fun CurrencyBadge(
     currency: CurrencyCode,
     selected: Boolean = false,
 ) = Text(
-    text = currency.isoCode,
+    text = stringResource(
+        when (currency) {
+            CurrencyCode.ILS -> R.string.currency_ils
+            CurrencyCode.USD -> R.string.currency_usd
+            CurrencyCode.JOD -> R.string.currency_jod
+        },
+    ),
     modifier = Modifier
         .clip(RoundedCornerShape(FinanceRadius.small))
         .background(if (selected) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))
@@ -105,6 +111,7 @@ fun CurrencyBadge(
 
 @Composable
 fun BalanceHeroCard(
+    balance: Money,
     hidden: Boolean,
     onToggleVisibility: () -> Unit,
 ) {
@@ -152,7 +159,7 @@ fun BalanceHeroCard(
                 }
             }
             HiddenMoneyText(
-                money = Money(0, CurrencyCode.ILS),
+                money = balance,
                 hidden = hidden,
                 color = Color.White,
                 modifier = Modifier.fillMaxWidth(),
@@ -160,6 +167,7 @@ fun BalanceHeroCard(
             Row(horizontalArrangement = Arrangement.spacedBy(FinanceSpacing.sm)) {
                 CurrencyBadge(CurrencyCode.ILS, selected = true)
                 CurrencyBadge(CurrencyCode.USD)
+                CurrencyBadge(CurrencyCode.JOD)
             }
         }
     }

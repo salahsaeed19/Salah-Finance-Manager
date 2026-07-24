@@ -2006,3 +2006,7 @@ It will include:
 - Verify build, lint, tests, and emulator launch.
 
 The project must display a working bilingual application shell before Phase 04 is accepted.
+
+## Phase 05 personal-account correction
+
+The accounts experience is a private “My Accounts” surface, not a generic provider picker. It groups Bank of Palestine currency subaccounts, Jawwal Pay, PalPay, and cash while retaining a separate ledger balance for each ISO currency. Account owners and payment routes are distinct concepts; future person/debt screens must not treat a person as a financial provider.

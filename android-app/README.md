@@ -36,3 +36,9 @@ The final Phase 04 production APK was launched on a POCO X3 Pro (Android 13), wh
 Arabic RTL/English LTR locale changes and persisted theme/privacy settings were checked.
 The connected test APK installation was cancelled by the phone (`INSTALL_FAILED_USER_RESTRICTED`);
 accept the device install prompt before rerunning `connectedDebugAndroidTest`.
+
+Phase 05 adds a private “My Accounts” configuration surface with independent ILS, USD,
+and JOD ledger balances for the owner’s bank, wallets, and cash. The optional local owner
+bootstrap is read only from `../private-config/salah-profile.properties`, which is ignored;
+copy the safe example file and supply private values locally. The Phase 05 artifact is
+`../artifacts/phase-05/SalahFinanceManager-phase05-debug.apk`.

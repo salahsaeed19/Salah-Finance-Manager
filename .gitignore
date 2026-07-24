@@ -1,9 +1,11 @@
 # Android and Gradle local state
 .gradle/
+**/.kotlin/
 **/build/
 artifacts/
 *.apk
 local.properties
+private-config/salah-profile.properties
 .idea/
 *.iml
 
@@ -21,6 +23,7 @@ local.properties
 *.key
 *.p12
 docs/screenshots/phase-04/*.png
+docs/screenshots/phase-05/*.png
 !docs/screenshots/references/finance-dashboard-reference.png
 
 # Reports and temporary data

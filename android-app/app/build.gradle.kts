@@ -17,8 +17,8 @@ android {
         applicationId = "com.salahabusaif.financemanager"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.4.0"
+        versionCode = 3
+        versionName = "0.5.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -27,7 +27,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     lint { abortOnError = true }
+
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/privateOwnerProfile/assets"))
 }
+
+val privateOwnerProfile = rootProject.projectDir.parentFile.resolve("private-config/salah-profile.properties")
+val copyPrivateOwnerProfile = tasks.register<Copy>("copyPrivateOwnerProfile") {
+    onlyIf { privateOwnerProfile.isFile }
+    from(privateOwnerProfile)
+    into(layout.buildDirectory.dir("generated/privateOwnerProfile/assets"))
+    rename { "owner-profile.properties" }
+}
+
+tasks.named("preBuild").configure { dependsOn(copyPrivateOwnerProfile) }
 
 tasks.withType<KotlinCompile>().configureEach { compilerOptions.jvmTarget.set(JvmTarget.JVM_17) }
 
@@ -61,6 +73,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:model"))
     implementation(project(":feature:dashboard"))
+    implementation(project(":feature:accounts"))
     implementation(project(":feature:people"))
     implementation(project(":feature:transactions"))
     implementation(project(":feature:settings"))

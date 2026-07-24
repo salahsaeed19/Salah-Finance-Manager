@@ -23,4 +23,12 @@ class FinanceAppSmokeTest {
         composeRule.onNodeWithTag("quick_actions_fab").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("quick_action_sheet").assertIsDisplayed()
     }
+
+    @Test
+    fun noAccountStateExplainsHowToStart() {
+        composeRule.onNodeWithTag("nav_transactions").performClick()
+
+        composeRule.onNodeWithTag("create_first_account").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("create_account").assertIsDisplayed()
+    }
 }

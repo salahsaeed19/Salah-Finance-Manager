@@ -35,6 +35,7 @@ import com.salahabusaif.financemanager.core.designsystem.FinanceScaffold
 import com.salahabusaif.financemanager.core.designsystem.FinanceTheme
 import com.salahabusaif.financemanager.core.designsystem.QuickActionSheet
 import com.salahabusaif.financemanager.core.designsystem.R
+import com.salahabusaif.financemanager.feature.accounts.AccountsScreen
 import com.salahabusaif.financemanager.feature.budget.PlansScreen
 import com.salahabusaif.financemanager.feature.dashboard.DashboardScreen
 import com.salahabusaif.financemanager.feature.people.PeopleScreen
@@ -61,6 +62,7 @@ fun financeApp(settingsViewModel: SettingsViewModel = hiltViewModel()) {
     val preferences by settingsViewModel.preferences.collectAsState()
     var destination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
     var showActions by remember { mutableStateOf(false) }
+    var showAccounts by remember { mutableStateOf(false) }
     var actionNotice by remember { mutableStateOf(false) }
     val snackbars = remember { SnackbarHostState() }
     val futureActionMessage = stringResource(R.string.future_action_message)
@@ -72,8 +74,13 @@ fun financeApp(settingsViewModel: SettingsViewModel = hiltViewModel()) {
     }
     FinanceTheme(preferences.theme) {
         FinanceScaffold(
-            title = stringResource(destination.label),
-            bottomBar = { financeBottomBar(destination) { destination = it } },
+            title = stringResource(if (showAccounts) R.string.my_accounts else destination.label),
+            bottomBar = {
+                financeBottomBar(destination) {
+                    destination = it
+                    showAccounts = false
+                }
+            },
             floatingActionButton = {
                 if (destination != AppDestination.SETTINGS) {
                     FinanceFloatingActionButton { showActions = true }
@@ -84,20 +91,30 @@ fun financeApp(settingsViewModel: SettingsViewModel = hiltViewModel()) {
                 androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().padding(padding).padding(snackbarPadding),
                 ) {
-                    when (destination) {
-                        AppDestination.HOME -> DashboardScreen()
-                        AppDestination.TRANSACTIONS -> TransactionsScreen()
-                        AppDestination.PEOPLE -> PeopleScreen()
-                        AppDestination.PLANS -> PlansScreen()
-                        AppDestination.SETTINGS -> SettingsScreen(settingsViewModel)
+                    if (showAccounts) {
+                        AccountsScreen(onBack = { showAccounts = false })
+                    } else {
+                        when (destination) {
+                            AppDestination.HOME -> DashboardScreen(onOpenAccounts = { showAccounts = true })
+                            AppDestination.TRANSACTIONS -> TransactionsScreen(onCreateAccount = { showAccounts = true })
+                            AppDestination.PEOPLE -> PeopleScreen()
+                            AppDestination.PLANS -> PlansScreen()
+                            AppDestination.SETTINGS -> SettingsScreen(settingsViewModel)
+                        }
                     }
                 }
             }
         }
         if (showActions) {
-            QuickActionSheet(onDismiss = { showActions = false }) {
+            QuickActionSheet(onDismiss = { showActions = false }) { action ->
                 showActions = false
-                actionNotice = true
+                if (action == com.salahabusaif.financemanager.core.designsystem.QuickAction.ADD_TRANSACTION) {
+                    destination = AppDestination.TRANSACTIONS
+                } else if (action == com.salahabusaif.financemanager.core.designsystem.QuickAction.ADD_SAVINGS) {
+                    showAccounts = true
+                } else {
+                    actionNotice = true
+                }
             }
         }
     }
