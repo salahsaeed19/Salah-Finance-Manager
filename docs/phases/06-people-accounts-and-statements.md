@@ -43,3 +43,7 @@ The personal-balance hero now owns real Compose selection state for ILS, USD, an
 ## Closing device validation
 
 The final APK was installed through `adb install -r` after the user approved the MIUI update prompt. It is `com.salahabusaif.financemanager` version `0.6.0` / code `5`, with min SDK 26, target SDK 35, Android Debug v2 signature, and SHA-256 `607298C022C6D1B2430F5736A9CF1BD067A0B0011B34DD8A80A50D357BF8E6B3`. Arabic RTL and English LTR were verified, as were the ILS/USD/JOD selectors, compact whole-value display, zero-summary suppression, app restart persistence, and focused Logcat. No application fatal exception, Room integrity error, or Compose crash was observed. Captured sanitized local screenshots are ignored by Git under `docs/screenshots/phase-06/`.
+
+## Post-phase rendering hotfix
+
+A physical-device review found that Recent Activity could flicker between valid rows and an empty message. The root cause was a `stateIn` activity subscription constructed directly in the profile composable, so every recomposition could observe the new flow's `emptyList()` initial value. The profile now consumes one ViewModel-owned immutable state flow with lifecycle-aware collection and initial-load semantics. The 30-second device stress check across currency changes retained the real rows without showing the empty state.

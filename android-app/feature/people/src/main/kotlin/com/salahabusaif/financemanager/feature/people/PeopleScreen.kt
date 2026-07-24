@@ -19,7 +19,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +31,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.salahabusaif.financemanager.core.designsystem.EmptyState
@@ -61,16 +61,56 @@ import android.util.Log
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class PeopleViewModel @Inject constructor(
     private val peopleGateway: PeopleGateway,
     private val ledgerGateway: LedgerGateway,
 ) : ViewModel() {
     val people = peopleGateway.people.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val accounts = ledgerGateway.financialAccounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val profileRequest = MutableStateFlow<PersonProfileRequest?>(null)
+
+    val profileState = profileRequest
+        .flatMapLatest { request ->
+            if (request == null) {
+                flowOf(PersonProfileUiState())
+            } else {
+                combine(
+                    peopleGateway.personOperations(request.summary.person.id, request.currency),
+                    accounts,
+                ) { operations, financialAccounts ->
+                    PersonProfileUiState(
+                        isInitialLoading = false,
+                        summary = request.summary,
+                        selectedCurrency = request.currency,
+                        accounts = financialAccounts,
+                        recentActivities = operations,
+                    )
+                }.onStart {
+                    emit(
+                        PersonProfileUiState(
+                            isInitialLoading = true,
+                            summary = request.summary,
+                            selectedCurrency = request.currency,
+                            accounts = accounts.value,
+                        ),
+                    )
+                }
+            }
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PersonProfileUiState())
 
     fun create(name: String, nickname: String, phone: String, aliases: String, notes: String) = viewModelScope.launch {
         peopleGateway.createPerson(
@@ -78,8 +118,17 @@ class PeopleViewModel @Inject constructor(
         )
     }
 
-    fun operations(personId: String, currency: CurrencyCode) =
-        peopleGateway.personOperations(personId, currency).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun openProfile(summary: PersonSummary) {
+        profileRequest.value = PersonProfileRequest(summary, CurrencyCode.ILS)
+    }
+
+    fun closeProfile() {
+        profileRequest.value = null
+    }
+
+    fun selectProfileCurrency(currency: CurrencyCode) {
+        profileRequest.value = profileRequest.value?.copy(currency = currency)
+    }
 
     fun post(type: PersonOperationType, personId: String, accountId: String, amountMinor: Long, notes: String, beneficiary: String = "", commissionMinor: Long = 0, settlement: InsufficientFundsSettlement = InsufficientFundsSettlement.REJECT) = viewModelScope.launch {
         val result = when (type) {
@@ -99,17 +148,20 @@ class PeopleViewModel @Inject constructor(
 
 @Composable
 fun PeopleScreen(viewModel: PeopleViewModel = hiltViewModel()) {
-    val people by viewModel.people.collectAsState()
+    val people by viewModel.people.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf<PersonSummary?>(null) }
+    var selected by remember { mutableStateOf(false) }
     when {
         adding -> PersonEditor(onDismiss = { adding = false }) { name, nickname, phone, aliases, notes ->
             viewModel.create(name, nickname, phone, aliases, notes)
             adding = false
         }
-        selected != null -> PersonProfile(requireNotNull(selected), viewModel, onBack = { selected = null })
-        else -> PeopleList(people, query, { query = it }, onAdd = { adding = true }, onOpen = { selected = it })
+        selected -> PersonProfile(viewModel, onBack = { selected = false; viewModel.closeProfile() })
+        else -> PeopleList(people, query, { query = it }, onAdd = { adding = true }, onOpen = { summary ->
+            viewModel.openProfile(summary)
+            selected = true
+        })
     }
 }
 
@@ -174,18 +226,18 @@ private fun PersonEditor(onDismiss: () -> Unit, onSave: (String, String, String,
 }
 
 @Composable
-private fun PersonProfile(summary: PersonSummary, viewModel: PeopleViewModel, onBack: () -> Unit) {
-    var currency by remember { mutableStateOf(CurrencyCode.ILS) }
+private fun PersonProfile(viewModel: PeopleViewModel, onBack: () -> Unit) {
     var action by remember { mutableStateOf<PersonOperationType?>(null) }
     var statement by remember { mutableStateOf<PersonStatement?>(null) }
-    val operations by viewModel.operations(summary.person.id, currency).collectAsState()
-    val accounts by viewModel.accounts.collectAsState()
+    val state by viewModel.profileState.collectAsStateWithLifecycle()
+    val summary = state.summary ?: return
+    val currency = state.selectedCurrency
     Column(Modifier.fillMaxSize().padding(FinanceSpacing.md), verticalArrangement = Arrangement.spacedBy(FinanceSpacing.sm)) {
         TextButton(onClick = onBack) { Text(stringResource(R.string.cancel)) }
         Text(summary.person.displayName)
         Row(horizontalArrangement = Arrangement.spacedBy(FinanceSpacing.sm)) {
             CurrencyCode.entries.forEach { item ->
-                TextButton(onClick = { currency = item }) { Text(stringResource(item.labelRes())) }
+                TextButton(onClick = { viewModel.selectProfileCurrency(item) }) { Text(stringResource(item.labelRes())) }
             }
         }
         val balance = summary.balances.first { it.currency == currency }
@@ -202,14 +254,33 @@ private fun PersonProfile(summary: PersonSummary, viewModel: PeopleViewModel, on
         }
         ActionButton(R.string.generate_statement) { viewModel.statement(summary.person.id, currency) { statement = it } }
         Text(stringResource(R.string.recent_activity))
-        if (operations.isEmpty()) Text(stringResource(R.string.no_person_activity))
-        else LazyColumn { items(operations, key = PersonOperation::id) { operation -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(stringResource(operation.type.labelRes())); MoneyText(Money(operation.amountMinor, operation.currency)) } } }
+        when {
+            state.isInitialLoading -> Text("…")
+            state.shouldShowEmptyRecentActivity -> Text(stringResource(R.string.no_person_activity))
+            else -> LazyColumn { items(state.recentActivities, key = PersonOperation::id) { operation -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(stringResource(operation.type.labelRes())); MoneyText(Money(operation.amountMinor, operation.currency)) } } }
+        }
     }
-    action?.let { type -> PersonOperationDialog(type, summary.person, currency, accounts, { action = null }) { account, amount, notes, beneficiary, commission, settlement ->
+    action?.let { type -> PersonOperationDialog(type, summary.person, currency, state.accounts, { action = null }) { account, amount, notes, beneficiary, commission, settlement ->
         viewModel.post(type, summary.person.id, account.id, amount, notes, beneficiary, commission, settlement)
         action = null
     } }
     statement?.let { PersonStatementDialog(it) { statement = null } }
+}
+
+private data class PersonProfileRequest(
+    val summary: PersonSummary,
+    val currency: CurrencyCode,
+)
+
+data class PersonProfileUiState(
+    val isInitialLoading: Boolean = false,
+    val summary: PersonSummary? = null,
+    val selectedCurrency: CurrencyCode = CurrencyCode.ILS,
+    val accounts: List<FinancialAccount> = emptyList(),
+    val recentActivities: List<PersonOperation> = emptyList(),
+) {
+    val shouldShowEmptyRecentActivity: Boolean
+        get() = !isInitialLoading && recentActivities.isEmpty()
 }
 
 @Composable
