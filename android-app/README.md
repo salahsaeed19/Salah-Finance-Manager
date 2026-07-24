@@ -42,3 +42,9 @@ and JOD ledger balances for the owner’s bank, wallets, and cash. The optional 
 bootstrap is read only from `../private-config/salah-profile.properties`, which is ignored;
 copy the safe example file and supply private values locally. The Phase 05 artifact is
 `../artifacts/phase-05/SalahFinanceManager-phase05-debug.apk`.
+
+Phase 06 adds people accounts and bilingual person statements. People remain distinct from
+the owner’s payment routes: deposits, withdrawals, loans, repayments, and transfers select
+one of the owner’s real accounts per movement. The verified Phase 06 artifact is
+`../artifacts/phase-06/SalahFinanceManager-phase06-debug.apk`; artifacts and device captures
+remain local and ignored.

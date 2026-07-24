@@ -9,6 +9,10 @@ import com.salahabusaif.financemanager.core.database.entity.FinancialAccountEnti
 import com.salahabusaif.financemanager.core.database.entity.LedgerAccountEntity
 import com.salahabusaif.financemanager.core.database.entity.LedgerPostingEntity
 import com.salahabusaif.financemanager.core.database.entity.LedgerTransactionEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonAliasEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonLedgerAccountEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonOperationEntity
 import com.salahabusaif.financemanager.core.database.entity.TransactionGroupEntity
 import com.salahabusaif.financemanager.core.ledger.CreateFinancialAccountCommand
 import com.salahabusaif.financemanager.core.ledger.AccountProvider
@@ -25,6 +29,20 @@ import com.salahabusaif.financemanager.core.ledger.LedgerValidationResult
 import com.salahabusaif.financemanager.core.ledger.NormalBalance
 import com.salahabusaif.financemanager.core.ledger.PostingEngine
 import com.salahabusaif.financemanager.core.ledger.PostingPlan
+import com.salahabusaif.financemanager.core.ledger.Posting
+import com.salahabusaif.financemanager.core.ledger.PostingDirection
+import com.salahabusaif.financemanager.core.ledger.PeopleGateway
+import com.salahabusaif.financemanager.core.ledger.Person
+import com.salahabusaif.financemanager.core.ledger.PersonCurrencyBalance
+import com.salahabusaif.financemanager.core.ledger.PersonMoneyCommand
+import com.salahabusaif.financemanager.core.ledger.PersonOperation
+import com.salahabusaif.financemanager.core.ledger.PersonOperationType
+import com.salahabusaif.financemanager.core.ledger.PersonStatement
+import com.salahabusaif.financemanager.core.ledger.PersonSummary
+import com.salahabusaif.financemanager.core.ledger.PersonTransferCommand
+import com.salahabusaif.financemanager.core.ledger.CreatePersonCommand
+import com.salahabusaif.financemanager.core.ledger.UpdatePersonCommand
+import com.salahabusaif.financemanager.core.ledger.InsufficientFundsSettlement
 import com.salahabusaif.financemanager.core.ledger.RecordTransactionCommand
 import com.salahabusaif.financemanager.core.ledger.UpdateFinancialAccountCommand
 import com.salahabusaif.financemanager.core.ledger.TransferCommand
@@ -39,12 +57,151 @@ import kotlinx.coroutines.flow.map
 @Singleton
 class RoomLedgerGateway @Inject constructor(
     private val database: FinanceDatabase,
-) : LedgerGateway {
+) : LedgerGateway, PeopleGateway {
     override val financialAccounts: Flow<List<FinancialAccount>> =
         database.ledgerDao().financialAccounts().map { rows -> rows.map(FinancialAccountRow::toDomain) }
 
     override val transactions: Flow<List<LedgerTransactionSummary>> =
         database.ledgerDao().transactionSummaries().map { rows -> rows.map(LedgerTransactionRow::toDomain) }
+
+    override val people: Flow<List<PersonSummary>> = database.ledgerDao().people().map { rows ->
+        rows.map { person -> personSummary(person) }
+    }
+
+    override suspend fun createPerson(command: CreatePersonCommand): Result<Person> = runCatching {
+        val name = command.displayName.trim()
+        require(name.isNotBlank()) { "Person name is required." }
+        val now = System.currentTimeMillis()
+        val person = PersonEntity(
+            id = UUID.randomUUID().toString(),
+            displayName = name,
+            normalizedName = normalize(name),
+            nickname = command.nickname.clean(),
+            phoneNumber = command.phoneNumber.clean(),
+            photoPath = command.photoPath.clean(),
+            notes = command.notes.clean(),
+            isArchived = false,
+            createdAt = now,
+            updatedAt = now,
+        )
+        database.withTransaction {
+            val dao = database.ledgerDao()
+            require(dao.person(person.id) == null)
+            val aliases = command.aliases.normalizedDistinct().map { alias ->
+                require(dao.aliasByNormalizedValue(normalize(alias)) == null) { "Alias already belongs to another person." }
+                PersonAliasEntity(UUID.randomUUID().toString(), person.id, alias, normalize(alias), now)
+            }
+            dao.insertPerson(person)
+            if (aliases.isNotEmpty()) dao.insertPersonAliases(aliases)
+            audit("person", person.id, "CREATED", now)
+        }
+        person.toDomain(command.aliases.normalizedDistinct())
+    }
+
+    override suspend fun updatePerson(command: UpdatePersonCommand): Result<Unit> = runCatching {
+        val name = command.displayName.trim()
+        require(name.isNotBlank()) { "Person name is required." }
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val dao = database.ledgerDao()
+            require(dao.person(command.id) != null) { "Person not found." }
+            require(dao.updatePerson(command.id, name, normalize(name), command.nickname.clean(), command.phoneNumber.clean(), command.photoPath.clean(), command.notes.clean(), now) == 1)
+            val newAliases = command.aliases.normalizedDistinct().map { alias ->
+                val existing = dao.aliasByNormalizedValue(normalize(alias))
+                require(existing == null || existing.personId == command.id) { "Alias already belongs to another person." }
+                PersonAliasEntity(UUID.randomUUID().toString(), command.id, alias, normalize(alias), now)
+            }
+            val known = dao.aliasesForPerson(command.id).map(PersonAliasEntity::normalizedAlias).toSet()
+            val additional = newAliases.filter { it.normalizedAlias !in known }
+            if (additional.isNotEmpty()) dao.insertPersonAliases(additional)
+            audit("person", command.id, "UPDATED", now)
+        }
+    }
+
+    override suspend fun archivePerson(id: String): Result<Unit> = runCatching {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            require(database.ledgerDao().archivePerson(id, true, now) == 1) { "Person not found." }
+            audit("person", id, "ARCHIVED", now)
+        }
+    }
+
+    override suspend fun person(id: String): Person? = database.withTransaction {
+        database.ledgerDao().person(id)?.let { entity -> entity.toDomain(database.ledgerDao().aliasesForPerson(id).map(PersonAliasEntity::alias)) }
+    }
+
+    override fun personOperations(personId: String, currency: CurrencyCode): Flow<List<PersonOperation>> =
+        database.ledgerDao().personOperationRows(personId, currency.isoCode).map { rows -> rows.map { it.toPersonOperation() } }
+
+    override suspend fun deposit(command: PersonMoneyCommand): Result<Unit> = postPersonMoney(command, PersonOperationType.DEPOSIT)
+
+    override suspend fun withdraw(command: PersonMoneyCommand): Result<Unit> = postPersonMoney(command, PersonOperationType.WITHDRAWAL)
+
+    override suspend fun loan(command: PersonMoneyCommand): Result<Unit> = postPersonMoney(command, PersonOperationType.LOAN)
+
+    override suspend fun repay(command: PersonMoneyCommand): Result<Unit> = postPersonMoney(command, PersonOperationType.REPAYMENT)
+
+    override suspend fun transfer(command: PersonTransferCommand): Result<Unit> = runCatching {
+        require(command.amountMinor > 0) { "Amount must be positive." }
+        require(command.commissionMinor >= 0) { "Commission cannot be negative." }
+        require(command.beneficiaryName.isNotBlank()) { "Beneficiary is required." }
+        database.withTransaction {
+            val dao = database.ledgerDao()
+            val now = System.currentTimeMillis()
+            val asset = requireNotNull(dao.ledgerAccountForFinancial(command.sourceFinancialAccountId)) { "Source account not found." }.toDomain()
+            require(dao.postedBalance(asset.id) >= command.amountMinor) { "Source account has insufficient funds." }
+            val funds = resolvePersonAccount(command.personId, LedgerAccountRole.PERSON_FUNDS_HELD, asset.currency, now)
+            val receivable = resolvePersonAccount(command.personId, LedgerAccountRole.PERSON_RECEIVABLE, asset.currency, now)
+            val total = command.amountMinor + command.commissionMinor
+            val held = -dao.postedBalance(funds.id)
+            val fromHeld = when (command.settlement) {
+                InsufficientFundsSettlement.FULL_RECEIVABLE -> 0
+                else -> minOf(held.coerceAtLeast(0), total)
+            }
+            val fromReceivable = total - fromHeld
+            require(fromReceivable == 0L || command.settlement != InsufficientFundsSettlement.REJECT) { "Person funds are insufficient." }
+            val postings = buildList {
+                if (fromHeld > 0) add(Posting(funds, PostingDirection.DEBIT, fromHeld))
+                if (fromReceivable > 0) add(Posting(receivable, PostingDirection.DEBIT, fromReceivable))
+                add(Posting(asset, PostingDirection.CREDIT, command.amountMinor))
+                if (command.commissionMinor > 0) add(Posting(SystemLedgerAccounts.commissionIncome(asset.currency), PostingDirection.CREDIT, command.commissionMinor))
+            }
+            val transactionId = writePlan(PostingPlan(command.operationId, LedgerTransactionType.PERSON_TRANSFER, asset.currency, "Transfer for person", postings), now)
+            dao.insertPersonOperation(
+                PersonOperationEntity(
+                    id = UUID.randomUUID().toString(),
+                    personId = command.personId,
+                    transactionId = transactionId,
+                    operationType = PersonOperationType.TRANSFER.name,
+                    financialAccountId = command.sourceFinancialAccountId,
+                    currencyCode = asset.currency.isoCode,
+                    amountMinor = command.amountMinor,
+                    commissionMinor = command.commissionMinor,
+                    fundsHeldChargedMinor = fromHeld,
+                    beneficiaryName = command.beneficiaryName.trim(),
+                    dueDate = null,
+                    notes = command.notes.clean(),
+                    createdAt = now,
+                ),
+            )
+        }
+    }
+
+    override suspend fun statement(personId: String, currency: CurrencyCode, startAt: Long, endAt: Long): Result<PersonStatement> = runCatching {
+        require(startAt <= endAt) { "Invalid statement period." }
+        database.withTransaction {
+            val dao = database.ledgerDao()
+            val person = requireNotNull(dao.person(personId)) { "Person not found." }
+            val all = dao.personOperationRowsNow(personId, currency.isoCode).map { it.toPersonOperation() }
+            val before = all.filter { it.occurredAt < startAt }
+            val period = all.filter { it.occurredAt in startAt..endAt }
+            val openingHeld = before.sumOf { it.fundsHeldDelta() }
+            val openingReceivable = before.sumOf { it.receivableDelta() }
+            val closingHeld = openingHeld + period.sumOf { it.fundsHeldDelta() }
+            val closingReceivable = openingReceivable + period.sumOf { it.receivableDelta() }
+            PersonStatement(person.toDomain(dao.aliasesForPerson(personId).map(PersonAliasEntity::alias)), currency, openingHeld, openingReceivable, period, closingHeld, closingReceivable)
+        }
+    }
 
     override suspend fun createFinancialAccount(command: CreateFinancialAccountCommand): Result<FinancialAccount> =
         runCatching {
@@ -207,7 +364,79 @@ class RoomLedgerGateway @Inject constructor(
         }
     }
 
-    private suspend fun writePlan(plan: PostingPlan, now: Long, groupId: String? = null) {
+    private suspend fun postPersonMoney(command: PersonMoneyCommand, type: PersonOperationType): Result<Unit> = runCatching {
+        require(command.amountMinor > 0) { "Amount must be positive." }
+        database.withTransaction {
+            val dao = database.ledgerDao()
+            val now = System.currentTimeMillis()
+            val asset = requireNotNull(dao.ledgerAccountForFinancial(command.financialAccountId)) { "Financial account not found." }.toDomain()
+            val funds = resolvePersonAccount(command.personId, LedgerAccountRole.PERSON_FUNDS_HELD, asset.currency, now)
+            val receivable = resolvePersonAccount(command.personId, LedgerAccountRole.PERSON_RECEIVABLE, asset.currency, now)
+            val plan = when (type) {
+                PersonOperationType.DEPOSIT -> PostingPlan(command.operationId, LedgerTransactionType.PERSON_DEPOSIT, asset.currency, "Person deposit", listOf(Posting(asset, PostingDirection.DEBIT, command.amountMinor), Posting(funds, PostingDirection.CREDIT, command.amountMinor)))
+                PersonOperationType.WITHDRAWAL -> {
+                    require(-dao.postedBalance(funds.id) >= command.amountMinor) { "Withdrawal exceeds money held." }
+                    PostingPlan(command.operationId, LedgerTransactionType.PERSON_WITHDRAWAL, asset.currency, "Person withdrawal", listOf(Posting(funds, PostingDirection.DEBIT, command.amountMinor), Posting(asset, PostingDirection.CREDIT, command.amountMinor)))
+                }
+                PersonOperationType.LOAN -> {
+                    require(dao.postedBalance(asset.id) >= command.amountMinor) { "Source account has insufficient funds." }
+                    PostingPlan(command.operationId, LedgerTransactionType.PERSON_LOAN, asset.currency, "Loan to person", listOf(Posting(receivable, PostingDirection.DEBIT, command.amountMinor), Posting(asset, PostingDirection.CREDIT, command.amountMinor)))
+                }
+                PersonOperationType.REPAYMENT -> {
+                    require(dao.postedBalance(receivable.id) >= command.amountMinor) { "Repayment exceeds the amount owed." }
+                    PostingPlan(command.operationId, LedgerTransactionType.PERSON_REPAYMENT, asset.currency, "Person repayment", listOf(Posting(asset, PostingDirection.DEBIT, command.amountMinor), Posting(receivable, PostingDirection.CREDIT, command.amountMinor)))
+                }
+                PersonOperationType.TRANSFER -> error("Use transfer command.")
+            }
+            require(PostingEngine.validate(plan) is LedgerValidationResult.Valid)
+            val transactionId = writePlan(plan, now)
+            dao.insertPersonOperation(
+                PersonOperationEntity(
+                    id = UUID.randomUUID().toString(),
+                    personId = command.personId,
+                    transactionId = transactionId,
+                    operationType = type.name,
+                    financialAccountId = command.financialAccountId,
+                    currencyCode = asset.currency.isoCode,
+                    amountMinor = command.amountMinor,
+                    commissionMinor = 0,
+                    fundsHeldChargedMinor = when (type) {
+                        PersonOperationType.DEPOSIT -> command.amountMinor
+                        PersonOperationType.WITHDRAWAL -> command.amountMinor
+                        else -> 0
+                    },
+                    beneficiaryName = null,
+                    dueDate = command.dueDate,
+                    notes = command.notes.clean(),
+                    createdAt = now,
+                ),
+            )
+        }
+    }
+
+    private suspend fun resolvePersonAccount(personId: String, role: LedgerAccountRole, currency: CurrencyCode, now: Long): LedgerAccount {
+        val dao = database.ledgerDao()
+        require(dao.person(personId) != null) { "Person not found." }
+        val existing = dao.personLedgerAccount(personId, role.name, currency.isoCode)
+        if (existing != null) return requireNotNull(dao.account(existing.ledgerAccountId)).toDomain()
+        val type = if (role == LedgerAccountRole.PERSON_FUNDS_HELD) LedgerAccountType.LIABILITY else LedgerAccountType.ASSET
+        val account = LedgerAccount("person-$personId-${role.name.lowercase()}-${currency.isoCode}", currency, type, role)
+        dao.insertAccounts(listOf(account.toEntity("Person ${role.name} ${currency.isoCode}", now)))
+        dao.insertPersonLedgerAccount(PersonLedgerAccountEntity(UUID.randomUUID().toString(), personId, account.id, role.name, currency.isoCode, now))
+        return account
+    }
+
+    private suspend fun personSummary(person: PersonEntity): PersonSummary {
+        val dao = database.ledgerDao()
+        val balances = CurrencyCode.entries.map { currency ->
+            val heldAccount = dao.personLedgerAccount(person.id, LedgerAccountRole.PERSON_FUNDS_HELD.name, currency.isoCode)
+            val receivableAccount = dao.personLedgerAccount(person.id, LedgerAccountRole.PERSON_RECEIVABLE.name, currency.isoCode)
+            PersonCurrencyBalance(currency, heldAccount?.let { -dao.postedBalance(it.ledgerAccountId) } ?: 0, receivableAccount?.let { dao.postedBalance(it.ledgerAccountId) } ?: 0)
+        }
+        return PersonSummary(person.toDomain(dao.aliasesForPerson(person.id).map(PersonAliasEntity::alias)), balances)
+    }
+
+    private suspend fun writePlan(plan: PostingPlan, now: Long, groupId: String? = null): String {
         val dao = database.ledgerDao()
         require(dao.transactionByOperationId(plan.operationId) == null) { "Duplicate operation ID." }
         val transactionId = UUID.randomUUID().toString()
@@ -244,6 +473,7 @@ class RoomLedgerGateway @Inject constructor(
             },
         )
         audit("ledger_transaction", transactionId, "POSTED", now)
+        return transactionId
     }
 
     private suspend fun audit(entityType: String, entityId: String, eventType: String, now: Long) {
@@ -268,6 +498,8 @@ private object SystemLedgerAccounts {
 
     fun otherIncome(currency: CurrencyCode) = systemAccount("other-income", currency, LedgerAccountType.INCOME, LedgerAccountRole.OTHER_INCOME)
 
+    fun commissionIncome(currency: CurrencyCode) = systemAccount("commission-income", currency, LedgerAccountType.INCOME, LedgerAccountRole.COMMISSION_INCOME)
+
     fun expense(currency: CurrencyCode) = systemAccount("expense", currency, LedgerAccountType.EXPENSE, LedgerAccountRole.EXPENSE_CATEGORY)
 
     fun fxClearing(currency: CurrencyCode) = systemAccount("fx-clearing", currency, LedgerAccountType.CLEARING, LedgerAccountRole.FX_CLEARING)
@@ -277,7 +509,7 @@ private object SystemLedgerAccounts {
             openingEquity(currency),
             salaryIncome(currency),
             otherIncome(currency),
-            systemAccount("commission-income", currency, LedgerAccountType.INCOME, LedgerAccountRole.COMMISSION_INCOME),
+            commissionIncome(currency),
             expense(currency),
             fxClearing(currency),
             systemAccount("transfer-clearing", currency, LedgerAccountType.CLEARING, LedgerAccountRole.TRANSFER_CLEARING),
@@ -326,6 +558,43 @@ private fun LedgerTransactionRow.toDomain() = LedgerTransactionSummary(
     amountMinor = amountMinor,
     isReversed = isReversed,
 )
+
+private fun PersonEntity.toDomain(aliases: List<String>) = Person(id, displayName, nickname, phoneNumber, photoPath, notes, aliases, isArchived)
+
+private fun com.salahabusaif.financemanager.core.database.dao.PersonOperationRow.toPersonOperation() = PersonOperation(
+    id = id,
+    transactionId = transactionId,
+    type = PersonOperationType.valueOf(operationType),
+    currency = CurrencyCode.valueOf(currencyCode),
+    amountMinor = amountMinor,
+    commissionMinor = commissionMinor,
+    fundsHeldChargedMinor = fundsHeldChargedMinor,
+    financialAccountId = financialAccountId,
+    beneficiaryName = beneficiaryName,
+    dueDate = dueDate,
+    notes = notes,
+    occurredAt = occurredAt,
+)
+
+private fun PersonOperation.fundsHeldDelta(): Long = when (type) {
+    PersonOperationType.DEPOSIT -> amountMinor
+    PersonOperationType.WITHDRAWAL -> -amountMinor
+    PersonOperationType.TRANSFER -> -fundsHeldChargedMinor
+    else -> 0
+}
+
+private fun PersonOperation.receivableDelta(): Long = when (type) {
+    PersonOperationType.LOAN -> amountMinor
+    PersonOperationType.REPAYMENT -> -amountMinor
+    PersonOperationType.TRANSFER -> amountMinor + commissionMinor - fundsHeldChargedMinor
+    else -> 0
+}
+
+private fun String?.clean(): String? = this?.trim()?.takeIf(String::isNotBlank)
+
+private fun List<String>.normalizedDistinct(): List<String> = map(String::trim).filter(String::isNotBlank).distinctBy(::normalize)
+
+private fun normalize(value: String): String = value.trim().lowercase()
 
 private const val millisPerDay = 86_400_000L
 private val realAccountRoles = setOf(LedgerAccountRole.BANK, LedgerAccountRole.WALLET, LedgerAccountRole.CASH, LedgerAccountRole.SAVINGS_ASSET)

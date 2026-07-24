@@ -11,6 +11,10 @@ import com.salahabusaif.financemanager.core.database.entity.LedgerAccountEntity
 import com.salahabusaif.financemanager.core.database.entity.LedgerPostingEntity
 import com.salahabusaif.financemanager.core.database.entity.LedgerTransactionEntity
 import com.salahabusaif.financemanager.core.database.entity.OwnerProfileEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonAliasEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonLedgerAccountEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonOperationEntity
 import com.salahabusaif.financemanager.core.database.entity.TransactionGroupEntity
 import com.salahabusaif.financemanager.core.database.entity.WalletCommissionRuleEntity
 
@@ -24,6 +28,10 @@ import com.salahabusaif.financemanager.core.database.entity.WalletCommissionRule
         LedgerAccountEntity::class,
         FinancialAccountEntity::class,
         OwnerProfileEntity::class,
+        PersonEntity::class,
+        PersonAliasEntity::class,
+        PersonLedgerAccountEntity::class,
+        PersonOperationEntity::class,
         TransactionGroupEntity::class,
         LedgerTransactionEntity::class,
         LedgerPostingEntity::class,
@@ -39,6 +47,6 @@ abstract class FinanceDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "salah_finance_manager.db"
-        const val VERSION = 3
+        const val VERSION = 5
     }
 }

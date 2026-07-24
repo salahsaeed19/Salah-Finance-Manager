@@ -51,6 +51,74 @@ data class OwnerProfileEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "people", indices = [Index(value = ["normalizedName"]), Index(value = ["isArchived"])])
+data class PersonEntity(
+    @PrimaryKey val id: String,
+    val displayName: String,
+    val normalizedName: String,
+    val nickname: String?,
+    val phoneNumber: String?,
+    val photoPath: String?,
+    val notes: String?,
+    val isArchived: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+@Entity(
+    tableName = "person_aliases",
+    foreignKeys = [ForeignKey(entity = PersonEntity::class, parentColumns = ["id"], childColumns = ["personId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index(value = ["personId"]), Index(value = ["normalizedAlias"], unique = true)],
+)
+data class PersonAliasEntity(
+    @PrimaryKey val id: String,
+    val personId: String,
+    val alias: String,
+    val normalizedAlias: String,
+    val createdAt: Long,
+)
+
+@Entity(
+    tableName = "person_ledger_accounts",
+    foreignKeys = [
+        ForeignKey(entity = PersonEntity::class, parentColumns = ["id"], childColumns = ["personId"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(entity = LedgerAccountEntity::class, parentColumns = ["id"], childColumns = ["ledgerAccountId"], onDelete = ForeignKey.RESTRICT),
+    ],
+    indices = [Index(value = ["ledgerAccountId"], unique = true), Index(value = ["personId", "role", "currencyCode"], unique = true)],
+)
+data class PersonLedgerAccountEntity(
+    @PrimaryKey val id: String,
+    val personId: String,
+    val ledgerAccountId: String,
+    val role: String,
+    val currencyCode: String,
+    val createdAt: Long,
+)
+
+@Entity(
+    tableName = "person_operations",
+    foreignKeys = [
+        ForeignKey(entity = PersonEntity::class, parentColumns = ["id"], childColumns = ["personId"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(entity = LedgerTransactionEntity::class, parentColumns = ["id"], childColumns = ["transactionId"], onDelete = ForeignKey.RESTRICT),
+    ],
+    indices = [Index(value = ["personId", "currencyCode"]), Index(value = ["transactionId"], unique = true)],
+)
+data class PersonOperationEntity(
+    @PrimaryKey val id: String,
+    val personId: String,
+    val transactionId: String,
+    val operationType: String,
+    val financialAccountId: String?,
+    val currencyCode: String,
+    val amountMinor: Long,
+    val commissionMinor: Long,
+    val fundsHeldChargedMinor: Long,
+    val beneficiaryName: String?,
+    val dueDate: Long?,
+    val notes: String?,
+    val createdAt: Long,
+)
+
 @Entity(tableName = "transaction_groups", indices = [Index(value = ["groupType"])])
 data class TransactionGroupEntity(
     @PrimaryKey val id: String,

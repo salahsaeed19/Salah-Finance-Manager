@@ -17,6 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
@@ -55,12 +58,24 @@ fun DashboardScreen(
     val balances = CurrencyCode.entries.associateWith { currency ->
         accounts.filter { !it.isArchived && it.currency == currency }.sumOf { it.balanceMinor }
     }
+    var selectedCurrency by rememberSaveable { mutableStateOf(CurrencyCode.ILS) }
+    val visibleBalances = DashboardBalances.visible(balances)
     Column(
         Modifier.fillMaxSize().padding(FinanceSpacing.md),
         verticalArrangement = Arrangement.spacedBy(FinanceSpacing.md),
     ) {
-        BalanceHeroCard(Money(balances.getValue(CurrencyCode.ILS), CurrencyCode.ILS), preferences.hideAmounts, viewModel::toggleAmounts)
-        CurrencyTotalsCard(balances, preferences.hideAmounts)
+        if (visibleBalances.isNotEmpty()) {
+            BalanceHeroCard(
+                balances = balances,
+                selectedCurrency = selectedCurrency,
+                hidden = preferences.hideAmounts,
+                onToggleVisibility = viewModel::toggleAmounts,
+                onCurrencySelected = { selectedCurrency = it },
+            )
+            CurrencyTotalsCard(balances, preferences.hideAmounts)
+        } else {
+            EmptyState(stringResource(R.string.no_balances_recorded), "", Icons.AutoMirrored.Filled.ReceiptLong)
+        }
         Button(onClick = onOpenAccounts, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.my_accounts_action))
         }
@@ -96,10 +111,10 @@ fun DashboardScreen(
 private fun CurrencyTotalsCard(balances: Map<CurrencyCode, Long>, hidden: Boolean) = Card(Modifier.fillMaxWidth()) {
     Column(Modifier.padding(FinanceSpacing.md), verticalArrangement = Arrangement.spacedBy(FinanceSpacing.sm)) {
         Text(stringResource(R.string.total_assets), style = MaterialTheme.typography.titleMedium)
-        CurrencyCode.entries.forEach { currency ->
+        DashboardBalances.visible(balances).forEach { (currency, balance) ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(currencyLabel(currency), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                com.salahabusaif.financemanager.core.designsystem.HiddenMoneyText(Money(balances.getValue(currency), currency), hidden)
+                com.salahabusaif.financemanager.core.designsystem.HiddenMoneyText(Money(balance, currency), hidden)
             }
         }
     }

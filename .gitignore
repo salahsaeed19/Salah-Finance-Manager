@@ -24,6 +24,8 @@ private-config/salah-profile.properties
 *.p12
 docs/screenshots/phase-04/*.png
 docs/screenshots/phase-05/*.png
+docs/screenshots/phase-06/*.png
+docs/screenshots/phase-06/*.xml
 !docs/screenshots/references/finance-dashboard-reference.png
 
 # Reports and temporary data

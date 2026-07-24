@@ -5,9 +5,11 @@ package com.salahabusaif.financemanager.core.designsystem
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -41,6 +43,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -91,18 +94,16 @@ fun HiddenMoneyText(
 @Composable
 fun CurrencyBadge(
     currency: CurrencyCode,
-    selected: Boolean = false,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) = Text(
-    text = stringResource(
-        when (currency) {
-            CurrencyCode.ILS -> R.string.currency_ils
-            CurrencyCode.USD -> R.string.currency_usd
-            CurrencyCode.JOD -> R.string.currency_jod
-        },
-    ),
+    text = stringResource(currency.labelRes()),
     modifier = Modifier
+        .defaultMinSize(minHeight = FinanceIconSize.touchTarget)
         .clip(RoundedCornerShape(FinanceRadius.small))
         .background(if (selected) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))
+        .clickable(onClick = onClick)
+        .testTag("dashboard_currency_${currency.name.lowercase()}")
         .padding(horizontal = FinanceSpacing.sm, vertical = FinanceSpacing.xs),
     color = Color.White,
     style = MaterialTheme.typography.labelMedium,
@@ -111,9 +112,11 @@ fun CurrencyBadge(
 
 @Composable
 fun BalanceHeroCard(
-    balance: Money,
+    balances: Map<CurrencyCode, Long>,
+    selectedCurrency: CurrencyCode,
     hidden: Boolean,
     onToggleVisibility: () -> Unit,
+    onCurrencySelected: (CurrencyCode) -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(FinanceRadius.extraLarge),
@@ -159,18 +162,24 @@ fun BalanceHeroCard(
                 }
             }
             HiddenMoneyText(
-                money = balance,
+                money = Money(balances.getValue(selectedCurrency), selectedCurrency),
                 hidden = hidden,
                 color = Color.White,
                 modifier = Modifier.fillMaxWidth(),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(FinanceSpacing.sm)) {
-                CurrencyBadge(CurrencyCode.ILS, selected = true)
-                CurrencyBadge(CurrencyCode.USD)
-                CurrencyBadge(CurrencyCode.JOD)
+                CurrencyCode.entries.forEach { currency ->
+                    CurrencyBadge(currency, currency == selectedCurrency) { onCurrencySelected(currency) }
+                }
             }
         }
     }
+}
+
+private fun CurrencyCode.labelRes() = when (this) {
+    CurrencyCode.ILS -> R.string.currency_ils
+    CurrencyCode.USD -> R.string.currency_usd
+    CurrencyCode.JOD -> R.string.currency_jod
 }
 
 @Composable

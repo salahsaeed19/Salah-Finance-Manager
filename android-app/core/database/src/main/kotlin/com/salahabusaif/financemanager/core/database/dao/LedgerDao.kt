@@ -11,6 +11,10 @@ import com.salahabusaif.financemanager.core.database.entity.FinancialAccountEnti
 import com.salahabusaif.financemanager.core.database.entity.LedgerPostingEntity
 import com.salahabusaif.financemanager.core.database.entity.LedgerTransactionEntity
 import com.salahabusaif.financemanager.core.database.entity.OwnerProfileEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonAliasEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonLedgerAccountEntity
+import com.salahabusaif.financemanager.core.database.entity.PersonOperationEntity
 import com.salahabusaif.financemanager.core.database.entity.TransactionGroupEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -43,8 +47,62 @@ data class LedgerTransactionRow(
     val isReversed: Boolean,
 )
 
+data class PersonOperationRow(
+    val id: String,
+    val personId: String,
+    val transactionId: String,
+    val operationType: String,
+    val financialAccountId: String?,
+    val currencyCode: String,
+    val amountMinor: Long,
+    val commissionMinor: Long,
+    val fundsHeldChargedMinor: Long,
+    val beneficiaryName: String?,
+    val dueDate: Long?,
+    val notes: String?,
+    val occurredAt: Long,
+)
+
 @Dao
 interface LedgerDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPerson(person: PersonEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPersonAliases(aliases: List<PersonAliasEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPersonLedgerAccount(account: PersonLedgerAccountEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPersonOperation(operation: PersonOperationEntity)
+
+    @Query("SELECT * FROM people WHERE id = :id LIMIT 1")
+    suspend fun person(id: String): PersonEntity?
+
+    @Query("SELECT * FROM people WHERE isArchived = 0 ORDER BY displayName COLLATE NOCASE")
+    fun people(): Flow<List<PersonEntity>>
+
+    @Query("SELECT * FROM person_aliases WHERE personId = :personId ORDER BY alias COLLATE NOCASE")
+    suspend fun aliasesForPerson(personId: String): List<PersonAliasEntity>
+
+    @Query("SELECT person_aliases.* FROM person_aliases WHERE normalizedAlias = :normalizedAlias LIMIT 1")
+    suspend fun aliasByNormalizedValue(normalizedAlias: String): PersonAliasEntity?
+
+    @Query("SELECT * FROM person_ledger_accounts WHERE personId = :personId AND role = :role AND currencyCode = :currencyCode LIMIT 1")
+    suspend fun personLedgerAccount(personId: String, role: String, currencyCode: String): PersonLedgerAccountEntity?
+
+    @Query("SELECT person_operations.id, person_operations.personId, person_operations.transactionId, person_operations.operationType, person_operations.financialAccountId, person_operations.currencyCode, person_operations.amountMinor, person_operations.commissionMinor, person_operations.fundsHeldChargedMinor, person_operations.beneficiaryName, person_operations.dueDate, person_operations.notes, ledger_transactions.occurredAt FROM person_operations INNER JOIN ledger_transactions ON ledger_transactions.id = person_operations.transactionId WHERE person_operations.personId = :personId AND person_operations.currencyCode = :currencyCode AND ledger_transactions.status = 'POSTED' ORDER BY ledger_transactions.occurredAt DESC")
+    fun personOperationRows(personId: String, currencyCode: String): Flow<List<PersonOperationRow>>
+
+    @Query("SELECT person_operations.id, person_operations.personId, person_operations.transactionId, person_operations.operationType, person_operations.financialAccountId, person_operations.currencyCode, person_operations.amountMinor, person_operations.commissionMinor, person_operations.fundsHeldChargedMinor, person_operations.beneficiaryName, person_operations.dueDate, person_operations.notes, ledger_transactions.occurredAt FROM person_operations INNER JOIN ledger_transactions ON ledger_transactions.id = person_operations.transactionId WHERE person_operations.personId = :personId AND person_operations.currencyCode = :currencyCode AND ledger_transactions.status = 'POSTED' ORDER BY ledger_transactions.occurredAt ASC")
+    suspend fun personOperationRowsNow(personId: String, currencyCode: String): List<PersonOperationRow>
+
+    @Query("UPDATE people SET displayName = :displayName, normalizedName = :normalizedName, nickname = :nickname, phoneNumber = :phoneNumber, photoPath = :photoPath, notes = :notes, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updatePerson(id: String, displayName: String, normalizedName: String, nickname: String?, phoneNumber: String?, photoPath: String?, notes: String?, updatedAt: Long): Int
+
+    @Query("UPDATE people SET isArchived = :archived, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun archivePerson(id: String, archived: Boolean, updatedAt: Long): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertOwnerProfile(profile: OwnerProfileEntity)
 

@@ -48,6 +48,41 @@ object PostingEngine {
         return plan(operationId, LedgerTransactionType.INTERNAL_TRANSFER, source.currency, "Internal transfer", listOf(debit(destination, amountMinor), credit(source, amountMinor)))
     }
 
+    fun personDeposit(operationId: String, destination: LedgerAccount, fundsHeld: LedgerAccount, amountMinor: Long): PostingPlan =
+        plan(operationId, LedgerTransactionType.PERSON_DEPOSIT, destination.currency, "Person deposit", listOf(debit(destination, amountMinor), credit(fundsHeld, amountMinor)))
+
+    fun personWithdrawal(operationId: String, fundsHeld: LedgerAccount, source: LedgerAccount, amountMinor: Long): PostingPlan =
+        plan(operationId, LedgerTransactionType.PERSON_WITHDRAWAL, source.currency, "Person withdrawal", listOf(debit(fundsHeld, amountMinor), credit(source, amountMinor)))
+
+    fun personLoan(operationId: String, receivable: LedgerAccount, source: LedgerAccount, amountMinor: Long): PostingPlan =
+        plan(operationId, LedgerTransactionType.PERSON_LOAN, source.currency, "Loan to person", listOf(debit(receivable, amountMinor), credit(source, amountMinor)))
+
+    fun personRepayment(operationId: String, destination: LedgerAccount, receivable: LedgerAccount, amountMinor: Long): PostingPlan =
+        plan(operationId, LedgerTransactionType.PERSON_REPAYMENT, destination.currency, "Person repayment", listOf(debit(destination, amountMinor), credit(receivable, amountMinor)))
+
+    fun personTransfer(
+        operationId: String,
+        fundsHeld: LedgerAccount,
+        receivable: LedgerAccount?,
+        source: LedgerAccount,
+        commissionIncome: LedgerAccount?,
+        transferAmountMinor: Long,
+        commissionMinor: Long,
+        fundsHeldAmountMinor: Long,
+    ): PostingPlan {
+        val total = transferAmountMinor + commissionMinor
+        require(transferAmountMinor > 0 && commissionMinor >= 0) { "Amounts must be valid." }
+        require(fundsHeldAmountMinor in 0..total) { "Held-funds settlement must be within the total charge." }
+        require(receivable != null || fundsHeldAmountMinor == total) { "A receivable is required for an uncovered transfer." }
+        val postings = buildList {
+            if (fundsHeldAmountMinor > 0) add(debit(fundsHeld, fundsHeldAmountMinor))
+            if (receivable != null && total > fundsHeldAmountMinor) add(debit(receivable, total - fundsHeldAmountMinor))
+            add(credit(source, transferAmountMinor))
+            if (commissionMinor > 0) add(credit(requireNotNull(commissionIncome), commissionMinor))
+        }
+        return plan(operationId, LedgerTransactionType.PERSON_TRANSFER, source.currency, "Transfer for person", postings)
+    }
+
     fun reversal(operationId: String, original: PostingPlan): PostingPlan =
         plan(
             operationId = operationId,

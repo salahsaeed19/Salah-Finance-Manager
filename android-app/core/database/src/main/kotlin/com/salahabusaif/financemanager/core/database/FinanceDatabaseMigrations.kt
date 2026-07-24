@@ -34,4 +34,27 @@ object FinanceDatabaseMigrations {
             database.execSQL("CREATE TABLE IF NOT EXISTS `owner_profile` (`id` TEXT NOT NULL, `fullName` TEXT NOT NULL, `phoneNumber` TEXT NOT NULL, `bankOfPalestineReference` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
         }
     }
+
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("CREATE TABLE IF NOT EXISTS `people` (`id` TEXT NOT NULL, `displayName` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `nickname` TEXT, `phoneNumber` TEXT, `photoPath` TEXT, `notes` TEXT, `isArchived` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_people_normalizedName` ON `people` (`normalizedName`)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_people_isArchived` ON `people` (`isArchived`)")
+            database.execSQL("CREATE TABLE IF NOT EXISTS `person_aliases` (`id` TEXT NOT NULL, `personId` TEXT NOT NULL, `alias` TEXT NOT NULL, `normalizedAlias` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_person_aliases_personId` ON `person_aliases` (`personId`)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_person_aliases_normalizedAlias` ON `person_aliases` (`normalizedAlias`)")
+            database.execSQL("CREATE TABLE IF NOT EXISTS `person_ledger_accounts` (`id` TEXT NOT NULL, `personId` TEXT NOT NULL, `ledgerAccountId` TEXT NOT NULL, `role` TEXT NOT NULL, `currencyCode` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(`ledgerAccountId`) REFERENCES `ledger_accounts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_person_ledger_accounts_ledgerAccountId` ON `person_ledger_accounts` (`ledgerAccountId`)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_person_ledger_accounts_personId_role_currencyCode` ON `person_ledger_accounts` (`personId`, `role`, `currencyCode`)")
+            database.execSQL("CREATE TABLE IF NOT EXISTS `person_operations` (`id` TEXT NOT NULL, `personId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `operationType` TEXT NOT NULL, `financialAccountId` TEXT, `currencyCode` TEXT NOT NULL, `amountMinor` INTEGER NOT NULL, `commissionMinor` INTEGER NOT NULL, `beneficiaryName` TEXT, `dueDate` INTEGER, `notes` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`personId`) REFERENCES `people`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(`transactionId`) REFERENCES `ledger_transactions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_person_operations_personId_currencyCode` ON `person_operations` (`personId`, `currencyCode`)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_person_operations_transactionId` ON `person_operations` (`transactionId`)")
+        }
+    }
+
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE `person_operations` ADD COLUMN `fundsHeldChargedMinor` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
 }

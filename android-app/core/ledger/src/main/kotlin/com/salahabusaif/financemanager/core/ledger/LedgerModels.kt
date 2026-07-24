@@ -23,6 +23,8 @@ enum class LedgerAccountRole {
     FX_CLEARING,
     TRANSFER_CLEARING,
     OPENING_BALANCE_EQUITY,
+    PERSON_FUNDS_HELD,
+    PERSON_RECEIVABLE,
     PERSONAL_PAYABLE,
     SUSPENSE,
 }
@@ -64,6 +66,11 @@ enum class LedgerTransactionType {
     COMMISSION_INCOME,
     REVERSAL,
     REPLACEMENT,
+    PERSON_DEPOSIT,
+    PERSON_WITHDRAWAL,
+    PERSON_LOAN,
+    PERSON_REPAYMENT,
+    PERSON_TRANSFER,
 }
 
 data class LedgerAccount(

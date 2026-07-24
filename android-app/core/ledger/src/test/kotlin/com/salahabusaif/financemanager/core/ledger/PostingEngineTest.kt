@@ -78,6 +78,45 @@ class PostingEngineTest {
         assertNull(CommissionCalculator.commissionFor(1_001, listOf(rule), 10))
     }
 
+    @Test
+    fun personDepositAndWithdrawalAreBalancedWithoutPersonalIncome() {
+        val held = account("held", CurrencyCode.ILS, LedgerAccountType.LIABILITY, LedgerAccountRole.PERSON_FUNDS_HELD)
+
+        val deposit = PostingEngine.personDeposit("person-deposit", bank, held, 2_000)
+        val withdrawal = PostingEngine.personWithdrawal("person-withdrawal", held, bank, 500)
+
+        assertEquals(LedgerTransactionType.PERSON_DEPOSIT, deposit.type)
+        assertEquals(LedgerTransactionType.PERSON_WITHDRAWAL, withdrawal.type)
+        assertTrue(PostingEngine.validate(deposit) is LedgerValidationResult.Valid)
+        assertTrue(PostingEngine.validate(withdrawal) is LedgerValidationResult.Valid)
+    }
+
+    @Test
+    fun loanAndRepaymentAreBalancedWithoutPersonalIncome() {
+        val receivable = account("receivable", CurrencyCode.USD, LedgerAccountType.ASSET, LedgerAccountRole.PERSON_RECEIVABLE)
+        val usdBank = account("usd-bank", CurrencyCode.USD, LedgerAccountType.ASSET, LedgerAccountRole.BANK)
+
+        val loan = PostingEngine.personLoan("person-loan", receivable, usdBank, 1_000)
+        val repayment = PostingEngine.personRepayment("person-repayment", usdBank, receivable, 400)
+
+        assertTrue(PostingEngine.validate(loan) is LedgerValidationResult.Valid)
+        assertTrue(PostingEngine.validate(repayment) is LedgerValidationResult.Valid)
+        assertEquals(LedgerTransactionType.PERSON_LOAN, loan.type)
+        assertEquals(LedgerTransactionType.PERSON_REPAYMENT, repayment.type)
+    }
+
+    @Test
+    fun mixedPersonTransferPostsHeldFundsAndReceivableSeparately() {
+        val held = account("held", CurrencyCode.ILS, LedgerAccountType.LIABILITY, LedgerAccountRole.PERSON_FUNDS_HELD)
+        val receivable = account("receivable", CurrencyCode.ILS, LedgerAccountType.ASSET, LedgerAccountRole.PERSON_RECEIVABLE)
+        val commission = account("commission", CurrencyCode.ILS, LedgerAccountType.INCOME, LedgerAccountRole.COMMISSION_INCOME)
+
+        val transfer = PostingEngine.personTransfer("person-transfer", held, receivable, bank, commission, 20_000, 150, 10_000)
+
+        assertTrue(PostingEngine.validate(transfer) is LedgerValidationResult.Valid)
+        assertEquals(10_150L, transfer.postings.filter { it.account.id == receivable.id }.single().amountMinor)
+    }
+
     private fun account(
         id: String,
         currency: CurrencyCode,
